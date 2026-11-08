@@ -1,0 +1,1078 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="A quiet place to read PDFs, EPUBs, and text files, one word at a time.">
+  <title>Instant Reader</title>
+  <style>
+    :root { color-scheme:dark; --bg:#111112; --panel:#19191b; --text:#e8e8e6; --muted:#88888d; --quiet:#646469; --border:#303033; --accent:#e58a7c; --reader-font:64px; --reader-family:Arial,Helvetica,sans-serif; }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:Arial,Helvetica,sans-serif; -webkit-font-smoothing:antialiased; }
+    button,input,select,textarea { font:inherit; }
+    button { color:inherit; cursor:pointer; }
+    button:disabled,input:disabled { cursor:default; }
+    button { border:0; background:none; }
+    button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible { outline:1px solid var(--text); outline-offset:6px; }
+    .app { position:relative; min-height:100svh; background:var(--bg); }
+    .header { position:absolute; inset:0 0 auto; display:flex; align-items:center; justify-content:space-between; padding:28px 36px; z-index:3; }
+    h1 { margin:0; font-size:18px; font-weight:500; letter-spacing:-.45px; }
+    .settings-wrap { position:relative; }
+    .settings-toggle { display:grid; place-items:center; width:36px; height:36px; color:var(--muted); cursor:pointer; list-style:none; border-radius:4px; }
+    .settings-toggle::-webkit-details-marker { display:none; }
+    .settings-toggle:hover,.settings-wrap[open] .settings-toggle { color:var(--text); background:#202022; }
+    svg { display:block; width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+    .settings-panel { position:absolute; right:0; top:36px; width:300px; max-width:calc(100vw - 40px); padding:23px; max-height:calc(100svh - 100px); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; background:var(--panel); border:1px solid var(--border); border-radius:6px; }
+    .settings-panel h2 { margin:0 0 24px; font-size:13px; font-weight:500; }
+    .setting { margin:0 0 23px; }
+    .setting-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; font-size:12px; color:var(--muted); }
+    .setting-head output { color:var(--text); font-variant-numeric:tabular-nums; }
+    .setting input[type=range] { display:block; width:100%; margin:0; accent-color:#b2b2b5; }
+    .font-select { width:100%; border:1px solid var(--border); border-radius:3px; padding:9px 10px; background:var(--bg); color:var(--text); font-size:12px; }
+    .colour-options { display:flex; gap:12px; align-items:center; }
+    .colour-choice { appearance:none; -webkit-appearance:none; width:32px; height:32px; margin:0; border:7px solid var(--panel); border-radius:50%; background:var(--swatch); outline:1px solid transparent; cursor:pointer; }
+    .colour-choice:checked { outline-color:var(--swatch); }
+    .colour-choice:focus-visible { outline:2px solid var(--text); outline-offset:4px; }
+    .checkline { display:flex; align-items:center; gap:9px; margin:15px 0; font-size:12px; color:var(--muted); line-height:1.5; }
+    input[type=checkbox] { margin:0; accent-color:#b2b2b5; }
+    .settings-actions { display:grid; gap:4px; border-top:1px solid var(--border); margin-top:22px; padding-top:14px; }
+    .text-button { text-align:left; padding:7px 0; color:var(--muted); font-size:12px; }
+    .text-button:hover { color:var(--text); }
+    .settings-note { color:var(--quiet); font-size:11px; line-height:1.6; margin:17px 0 0; }
+    .stage { min-height:100svh; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:1fr auto 1fr; grid-template-areas:"before" "reading" "extras"; padding:176px 32px; }
+    .stage:has(.focus[hidden]) { padding-block:120px 180px; }
+    .empty { grid-area:reading; display:grid; place-items:center; }
+    .upload { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; width:290px; max-width:calc(100vw - 48px); min-height:160px; border:1px dashed #37373b; border-radius:5px; background:none; color:#bdbdc1; }
+    .upload svg { width:24px; height:24px; color:var(--quiet); }
+    .upload span { font-size:14px; }
+    .upload small { color:var(--quiet); font-size:11px; }
+    .upload:hover,.upload.over { border-color:var(--muted); }
+    .word { width:100%; min-width:0; margin:0; text-align:center; font-size:var(--reader-font); font-family:var(--reader-family); font-weight:400; line-height:1.25; letter-spacing:-.035em; font-variant-ligatures:none; }
+    .focus { grid-area:reading; min-width:0; }
+    .reading-extras { grid-area:extras; align-self:start; min-width:0; text-align:center; }
+    .paused-context { display:flex; justify-content:center; min-width:0; color:var(--muted); font-size:max(12px, calc(var(--reader-font) - 17px)); white-space:nowrap; }
+    .paused-context > span { min-width:0; overflow:hidden; text-overflow:ellipsis; text-align:start; }
+    .context-before { grid-area:before; align-self:end; margin-bottom:8px; }
+    /* Truncate the far end of the preceding line and keep its text direction. */
+    .context-before > span { direction:rtl; }
+    .context-before > span:has(bdi:dir(rtl)) { direction:ltr; }
+    .context-after { margin-top:8px; }
+    .context-after > span:has(bdi:dir(rtl)) { direction:rtl; }
+    .orp { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:baseline; }
+    .orp-left { text-align:right; white-space:pre; }
+    .orp-pivot { color:var(--accent); white-space:pre; }
+    .orp-right { text-align:left; white-space:pre; }
+    .phrase { display:block; overflow-wrap:anywhere; }
+    .placeholder { font-size:15px; letter-spacing:0; color:var(--muted); }
+    .message { max-width:620px; margin:18px auto 0; color:var(--muted); font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
+    .message:empty { display:none; }
+    .message.error { color:#cfa5a0; }
+    .resume-prompt { margin-top:16px; display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:8px 18px; color:var(--muted); font-size:12px; }
+    .resume-prompt .text-button { color:var(--text); }
+    .footer { position:absolute; bottom:0; left:0; right:0; width:min(100%,1080px); margin:0 auto; padding:24px 36px 25px; }
+    :is(.header,.footer) { transition:opacity 160ms ease; }
+    .quiet-playback:not(.controls-visible):not(:has(.settings-wrap[open], .header :focus-visible, .footer :focus-visible)) :is(.header,.footer) { opacity:0; pointer-events:none; }
+    .quiet-playback .focus:focus { outline:none; }
+    .document-row { display:flex; align-items:center; justify-content:space-between; gap:24px; min-height:28px; margin-bottom:10px; color:var(--quiet); font-size:11px; font-variant-numeric:tabular-nums; }
+    .document-name { display:flex; min-width:0; align-items:center; gap:10px; }
+    #docName { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .replace { flex-shrink:0; color:var(--muted); padding:5px; }
+    .replace svg { width:14px; height:14px; }
+    .reading-info { display:flex; gap:20px; white-space:nowrap; }
+    .page-jump { position:relative; }
+    .page-button { padding:0; color:inherit; font:inherit; font-variant-numeric:tabular-nums; }
+    .page-button:hover { color:var(--text); }
+    .page-jump-panel { position:absolute; right:0; bottom:calc(100% + 14px); width:200px; padding:16px; border:1px solid var(--border); border-radius:4px; background:var(--panel); z-index:2; white-space:normal; }
+    .page-jump-panel label { display:block; margin-bottom:12px; color:var(--text); font-size:12px; }
+    .page-jump-controls { display:flex; align-items:center; gap:12px; }
+    .page-jump-controls input { width:100%; min-width:0; padding:7px; background:var(--bg); border:1px solid var(--border); border-radius:3px; color:var(--text); font-size:13px; }
+    .page-jump-hint { margin:12px 0 0; color:var(--muted); line-height:1.5; }
+    .progress-track { position:relative; height:18px; }
+    .progress-track::before,.progress-fill { position:absolute; top:8px; left:0; height:2px; border-radius:1px; pointer-events:none; }
+    .progress-track::before { content:""; width:100%; background:#2b2b2e; }
+    .progress-fill { width:var(--progress,0%); background:#aaa9a5; }
+    #progress { position:absolute; inset:0; appearance:none; -webkit-appearance:none; width:100%; height:18px; margin:0; padding:0; background:transparent; cursor:pointer; }
+    #progress::-webkit-slider-runnable-track { height:2px; background:transparent; }
+    #progress::-moz-range-track { height:2px; background:transparent; }
+    #progress::-webkit-slider-thumb { appearance:none; width:8px; height:8px; margin-top:-3px; border-radius:50%; background:transparent; }
+    #progress::-moz-range-thumb { width:8px; height:8px; border:0; border-radius:50%; background:transparent; }
+    #progress:hover:not(:disabled)::-webkit-slider-thumb,#progress:focus-visible::-webkit-slider-thumb { background:var(--text); }
+    #progress:hover:not(:disabled)::-moz-range-thumb,#progress:focus-visible::-moz-range-thumb { background:var(--text); }
+    .playback-row { display:flex; justify-content:space-between; align-items:center; min-height:39px; font-size:11px; color:var(--quiet); }
+    .player-controls { display:flex; gap:6px; align-items:center; margin-left:-8px; }
+    .ctl { display:grid; place-items:center; height:32px; min-width:32px; padding:6px 8px; color:var(--muted); font-size:12px; }
+    .ctl:hover:not(:disabled) { color:var(--text); }
+    .ctl:disabled { color:#3d3d41; }
+    .ctl.primary { color:var(--text); }
+    .ctl.primary:disabled { color:#3d3d41; }
+    .ctl.primary span { font-size:14px; }
+    .keyboard { display:flex; justify-content:center; flex-wrap:wrap; column-gap:24px; row-gap:9px; margin-top:18px; color:var(--quiet); font-size:11px; }
+    kbd { font:inherit; color:inherit; margin-right:5px; }
+    .modal { position:fixed; inset:0; z-index:5; display:none; align-items:center; justify-content:center; padding:24px; background:var(--bg); }
+    .modal.show { display:flex; }
+    .modal-inner { width:min(540px,100%); border:1px solid var(--border); border-radius:6px; padding:24px; background:var(--panel); }
+    .modal-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px; font-size:14px; font-weight:400; }
+    textarea { width:100%; min-height:220px; padding:14px; resize:vertical; border:1px solid var(--border); border-radius:3px; background:var(--bg); color:var(--text); line-height:1.6; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:20px; margin-top:15px; }
+    .action { background:#dddcd7; color:#111112; padding:9px 14px; border-radius:3px; font-size:12px; }
+    .find-dialog { width:min(440px,calc(100% - 32px)); padding:20px; border:1px solid var(--border); border-radius:6px; background:var(--panel); color:var(--text); }
+    .find-dialog::backdrop { background:rgb(0 0 0 / .45); }
+    .find-dialog .modal-head { margin-bottom:12px; }
+    .find-dialog input { width:100%; padding:9px 10px; background:var(--bg); border:1px solid var(--border); border-radius:3px; color:var(--text); font-size:14px; }
+    .find-status,.find-preview { margin:12px 0 0; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+    .find-preview:empty { display:none; }
+    .find-dialog button:disabled { opacity:.4; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+    .app:fullscreen { width:100%; overflow:auto; }
+    @media (max-width:600px) {
+      .header { padding:19px 20px; }
+      h1 { font-size:16px; }
+      .settings-panel { width:280px; }
+      .footer { padding:20px; }
+      .stage { padding-inline:20px; }
+      .reading-info { gap:10px; }
+      #remainingInfo { display:none; }
+      .keyboard { column-gap:17px; font-size:10px; margin-top:12px; }
+    }
+    @media (max-height:500px) {
+      .app,.stage { min-height:500px; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      :is(.header,.footer) { transition:none; }
+    }
+  </style>
+</head>
+<body>
+<div class="app" id="reader">
+  <header class="header">
+    <h1>Instant Reader</h1>
+    <details class="settings-wrap" id="settings">
+      <summary class="settings-toggle" aria-label="Reading settings" title="Reading settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 3-.6 2.3-1.6.9L5 5.6 2.5 9.9l1.7 1.7v1.8l-1.7 1.7L5 19.4l2.3-.6 1.6.9.6 2.3h5l.6-2.3 1.6-.9 2.3.6 2.5-4.3-1.7-1.7v-1.8l1.7-1.7L19 5.6l-2.3.6-1.6-.9L14.5 3Z" transform="translate(0 -1)"/><circle cx="12" cy="11.5" r="3"/></svg>
+      </summary>
+      <section class="settings-panel" aria-labelledby="settings-heading">
+        <h2 id="settings-heading">Reading settings</h2>
+        <div class="setting"><label class="setting-head" for="wpm">Speed <output id="wpmValue" for="wpm">300 WPM</output></label><input id="wpm" type="range" min="80" max="1000" step="20" value="300" aria-label="Reading speed, words per minute"></div>
+        <div class="setting"><label class="setting-head" for="chunk">Words at a time <output id="chunkValue" for="chunk">1 word</output></label><input id="chunk" type="range" min="1" max="5" step="1" value="1" aria-label="Words shown at a time"></div>
+        <div class="setting"><label class="setting-head" for="fontFamily">Font</label><select class="font-select" id="fontFamily" aria-label="Reading font"><option value="sans">Sans serif</option><option value="serif">Serif</option><option value="mono">Monospace</option></select></div>
+        <div class="setting"><label class="setting-head" for="fontSize">Font size <output id="sizeValue" for="fontSize">64 px</output></label><input id="fontSize" type="range" min="24" max="120" step="2" value="64" aria-label="Reading text size"></div>
+        <div class="setting">
+          <div class="setting-head"><span id="highlightColourLabel">Highlight colour</span><output id="highlightColourValue">Coral</output></div>
+          <div class="colour-options" role="radiogroup" aria-labelledby="highlightColourLabel">
+            <input class="colour-choice" type="radio" name="highlightColour" value="#e58a7c" style="--swatch:#e58a7c" aria-label="Coral" title="Coral" checked>
+            <input class="colour-choice" type="radio" name="highlightColour" value="#e5bb70" style="--swatch:#e5bb70" aria-label="Amber" title="Amber">
+            <input class="colour-choice" type="radio" name="highlightColour" value="#96c9a1" style="--swatch:#96c9a1" aria-label="Green" title="Green">
+            <input class="colour-choice" type="radio" name="highlightColour" value="#8eb9e8" style="--swatch:#8eb9e8" aria-label="Blue" title="Blue">
+            <input class="colour-choice" type="radio" name="highlightColour" value="#b5a0df" style="--swatch:#b5a0df" aria-label="Lavender" title="Lavender">
+          </div>
+        </div>
+        <label class="checkline"><input id="smartPause" type="checkbox" checked> Pause at punctuation</label>
+        <label class="checkline"><input id="focusLetter" type="checkbox" checked> Highlight focal letter</label>
+        <label class="checkline"><input id="showContext" type="checkbox" checked> Show sentence when paused</label>
+        <label class="checkline"><input id="quietPlayback" type="checkbox" checked> Quiet playback</label>
+        <div class="settings-actions">
+          <button class="text-button" type="button" id="openFile">Open a file</button>
+          <button class="text-button" type="button" id="openFind" disabled>Find in document</button>
+          <button class="text-button" type="button" id="pasteBtn">Paste text</button>
+          <button class="text-button" type="button" id="sampleBtn">Try a sample</button>
+          <button class="text-button" type="button" id="fullBtn">Full screen</button>
+        </div>
+        <p class="settings-note">Files are processed on your device. Scanned PDFs need OCR first.</p>
+      </section>
+    </details>
+  </header>
+  <main class="stage" aria-label="Speed reader">
+    <input id="fileInput" type="file" accept="application/pdf,application/epub+zip,text/plain,text/html,.pdf,.epub,.txt,.html,.htm" hidden>
+    <div class="empty" id="emptyState">
+      <button class="upload" id="dropZone" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8Z"/><path d="M14 3v5h5M12 17v-6m-3 3 3-3 3 3"/></svg>
+        <span>Open or drop a file</span>
+        <small>PDF, EPUB, TXT or HTML</small>
+      </button>
+    </div>
+    <p class="word paused-context context-before" id="contextBefore" dir="auto" hidden><span><bdi></bdi></span></p>
+    <div class="focus" id="focusArea" tabindex="-1" aria-label="Current reading text" hidden>
+      <div class="word" id="currentWord" aria-live="off"></div>
+    </div>
+    <div class="reading-extras">
+      <p class="word paused-context context-after" id="contextAfter" dir="auto" hidden><span><bdi></bdi></span></p>
+      <p class="message" role="status" aria-live="polite" id="message"></p>
+      <div class="resume-prompt" id="resumePrompt" hidden role="group" aria-label="Saved reading position">
+        <span id="resumeText"></span><button class="text-button" id="resumeReading" type="button">Resume</button><button class="text-button" id="startOver" type="button">Start over</button>
+      </div>
+    </div>
+  </main>
+  <footer class="footer">
+    <div class="document-row" id="documentRow" hidden>
+      <div class="document-name"><span id="docName"></span><button class="replace" id="replaceFile" type="button" aria-label="Open another file" title="Open another file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h13m-4-4 4 4-4 4M17 17H4m4-4-4 4 4 4"/></svg></button></div>
+      <div class="reading-info">
+        <div class="page-jump" id="pageJump">
+          <button class="page-button" id="pageInfo" type="button" aria-label="Jump to page" aria-expanded="false" aria-controls="pageJumpPanel" title="Jump to a page"></button>
+          <form class="page-jump-panel" id="pageJumpPanel" aria-label="Jump to a page" hidden novalidate>
+            <label id="jumpLabel" for="pageNumber">Go to page</label>
+            <div class="page-jump-controls"><input id="pageNumber" type="number" min="1" step="1" required inputmode="numeric" aria-describedby="pageJumpHint"><button class="text-button" type="submit">Go</button></div>
+            <p class="page-jump-hint" id="pageJumpHint" aria-live="polite"></p>
+          </form>
+        </div>
+        <span id="remainingInfo"></span>
+      </div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div><input type="range" id="progress" min="0" max="100" value="0" disabled aria-label="Reading position"></div>
+    <div class="playback-row" id="playbackRow" hidden>
+      <div class="player-controls">
+        <button class="ctl" type="button" id="backTen" disabled title="Back 10 words" aria-label="Back 10 words">−10</button>
+        <button class="ctl" type="button" id="prev" disabled title="Previous word group" aria-label="Previous word group">←</button>
+        <button class="ctl primary" type="button" id="play" disabled title="Play / pause"><span id="playIcon" aria-hidden="true">▶</span><span class="sr-only" id="playLabel">Play</span></button>
+        <button class="ctl" type="button" id="next" disabled title="Next word group" aria-label="Next word group">→</button>
+        <button class="ctl" type="button" id="forwardTen" disabled title="Forward 10 words" aria-label="Forward 10 words">+10</button>
+      </div>
+      <span id="progressText"></span>
+    </div>
+    <div class="keyboard" aria-label="Keyboard shortcuts"><span><kbd>Space</kbd> play / pause</span><span><kbd>← →</kbd> seek</span><span><kbd>Shift + ← →</kbd> sentence</span><span><kbd>↑ ↓</kbd> speed</span><span><kbd>F</kbd> full screen</span><span><kbd>R</kbd> reset</span><span><kbd>N</kbd> new file</span><span><kbd>S</kbd> search</span></div>
+    <span class="sr-only" id="docMeta"></span><span class="sr-only" id="modeLabel"></span>
+  </footer>
+  <dialog class="find-dialog" id="findDialog" aria-labelledby="findTitle">
+    <form id="findForm">
+      <div class="modal-head"><label id="findTitle" for="findInput">Find in document</label><button type="button" class="text-button" id="closeFind" aria-label="Close search">✕</button></div>
+      <input type="search" id="findInput" placeholder="Word or phrase" maxlength="300" autocomplete="off" autofocus>
+      <p class="find-status" id="findStatus" role="status"></p>
+      <p class="find-preview" id="findPreview"></p>
+      <div class="modal-actions">
+        <button type="button" class="text-button" id="findPrev" aria-label="Previous match">Previous</button>
+        <button type="button" class="text-button" id="findNext" aria-label="Next match">Next</button>
+        <button type="submit" class="action" id="findGo">Go to match</button>
+      </div>
+    </form>
+  </dialog>
+</div>
+<div class="modal" id="pasteModal" role="dialog" aria-modal="true" aria-labelledby="pasteTitle">
+  <div class="modal-inner"><div class="modal-head"><span id="pasteTitle">Paste something to read</span><button type="button" id="closeModal" class="text-button" aria-label="Close dialog">✕</button></div>
+    <textarea id="pasteText" aria-label="Text to read" placeholder="Paste your text here…"></textarea>
+    <div class="modal-actions"><button type="button" id="cancelPaste" class="text-button">Cancel</button><button type="button" id="importPaste" class="action">Read text</button></div>
+  </div>
+</div>
+
+<script type="module">
+  // Lazy-load PDF.js only when the user imports a PDF. It processes bytes locally.
+  // Pin the library and worker to the same version.
+  const PDFJS_VERSION = '6.3.289';
+  const PDFJS_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/`;
+  let pdfjsPromise;
+  const pdfjs = async () => {
+    if (!pdfjsPromise) {
+      pdfjsPromise = import(`${PDFJS_BASE}pdf.mjs`).then(lib => {
+        lib.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}pdf.worker.mjs`;
+        return lib;
+      }).catch(err => { pdfjsPromise = null; throw err; });
+    }
+    return pdfjsPromise;
+  };
+
+  const $ = id => document.getElementById(id);
+  const el = {
+    input:$('fileInput'), drop:$('dropZone'), sample:$('sampleBtn'), paste:$('pasteBtn'),
+    message:$('message'), wpm:$('wpm'), wpmValue:$('wpmValue'), chunk:$('chunk'), chunkValue:$('chunkValue'),
+    fontFamily:$('fontFamily'), highlightColourValue:$('highlightColourValue'),
+    fontSize:$('fontSize'), sizeValue:$('sizeValue'), smartPause:$('smartPause'), focusLetter:$('focusLetter'),
+    contextBefore:$('contextBefore'), contextAfter:$('contextAfter'), showContext:$('showContext'), quietPlayback:$('quietPlayback'),
+    full:$('fullBtn'), reader:$('reader'), word:$('currentWord'),
+    settings:$('settings'), empty:$('emptyState'), focus:$('focusArea'),
+    resumePrompt:$('resumePrompt'), resumeText:$('resumeText'), resume:$('resumeReading'), startOver:$('startOver'),
+    pageJump:$('pageJump'), pageJumpPanel:$('pageJumpPanel'), pageNumber:$('pageNumber'), pageJumpHint:$('pageJumpHint'), jumpLabel:$('jumpLabel'),
+    documentRow:$('documentRow'), playbackRow:$('playbackRow'), progressFill:$('progressFill'),
+    docName:$('docName'), docMeta:$('docMeta'), mode:$('modeLabel'), page:$('pageInfo'), remaining:$('remainingInfo'),
+    progress:$('progress'), progressText:$('progressText'), play:$('play'), playIcon:$('playIcon'), playLabel:$('playLabel'),
+    prev:$('prev'), next:$('next'), backTen:$('backTen'), forwardTen:$('forwardTen'),
+    openFind:$('openFind'), findDialog:$('findDialog'), findForm:$('findForm'), findInput:$('findInput'), closeFind:$('closeFind'),
+    findStatus:$('findStatus'), findPreview:$('findPreview'), findPrev:$('findPrev'), findNext:$('findNext'), findGo:$('findGo'),
+    modal:$('pasteModal'), closeModal:$('closeModal'), cancelPaste:$('cancelPaste'), importPaste:$('importPaste'), pasteText:$('pasteText')
+  };
+
+  const readerFonts = {
+    sans: 'Arial, Helvetica, sans-serif',
+    serif: 'Georgia, "Times New Roman", serif',
+    mono: 'ui-monospace, "Liberation Mono", Consolas, monospace'
+  };
+
+  const state = { words:[], index:0, playing:false, finished:false, timer:null, name:'', pageCount:0, unit:'page', importId:0, loading:false, documentId:null, pendingResume:null, progressTimer:null };
+  const sentenceSegmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, {granularity:'sentence'}) : null;
+  const wordMeasure = document.createElement('canvas').getContext('2d');
+  let readingIndex;
+  let findResults = [];
+  let findSelection = 0;
+  let controlsTimer;
+  const fmt = n => n.toLocaleString(undefined, {maximumFractionDigits:0});
+  const number = id => Number(el[id].value);
+  const setMessage = (msg, kind='') => {
+    el.message.textContent = kind === 'success' && state.words.length ? '' : msg;
+    el.message.className = `message ${kind}`;
+  };
+  const usable = () => state.words.length > 0 && !state.loading;
+
+  const PREFERENCES_KEY = 'instant-reader.preferences.v1';
+  const POSITIONS_KEY = 'instant-reader.positions.v1';
+  const preferenceControls = [el.wpm, el.chunk, el.fontFamily, el.fontSize, el.smartPause, el.focusLetter, el.showContext, el.quietPlayback,
+    ...document.querySelectorAll('input[name="highlightColour"]')];
+
+  function readStored(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+    catch { return fallback; }
+  }
+
+  function writeStored(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); }
+    catch { /* Reading still works when browser storage is unavailable or full. */ }
+  }
+
+  function savePreferences() {
+    writeStored(PREFERENCES_KEY, {
+      wpm:number('wpm'), chunk:number('chunk'), fontSize:number('fontSize'), fontFamily:el.fontFamily.value,
+      highlightColour:document.querySelector('input[name="highlightColour"]:checked').value,
+      smartPause:el.smartPause.checked, focusLetter:el.focusLetter.checked,
+      showContext:el.showContext.checked, quietPlayback:el.quietPlayback.checked
+    });
+  }
+
+  function restorePreferences() {
+    const saved = readStored(PREFERENCES_KEY, {});
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return;
+    for (const name of ['wpm', 'chunk', 'fontSize']) {
+      if (typeof saved[name] !== 'number' || !Number.isFinite(saved[name])) continue;
+      const control = el[name];
+      const min = Number(control.min), max = Number(control.max), step = Number(control.step);
+      control.value = min + Math.round((Math.min(max, Math.max(min, saved[name])) - min) / step) * step;
+    }
+    if (typeof saved.fontFamily === 'string' && Object.hasOwn(readerFonts, saved.fontFamily)) el.fontFamily.value = saved.fontFamily;
+    for (const name of ['smartPause', 'focusLetter', 'showContext', 'quietPlayback']) {
+      if (typeof saved[name] === 'boolean') el[name].checked = saved[name];
+    }
+    const colour = Array.from(document.querySelectorAll('input[name="highlightColour"]')).find(input => input.value === saved.highlightColour);
+    if (colour) colour.checked = true;
+  }
+
+  async function identifyDocument(file) {
+    try {
+      const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+      return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    } catch { return null; }
+  }
+
+  function savedPositions() {
+    const entries = readStored(POSITIONS_KEY, []);
+    return Array.isArray(entries) ? entries.filter(entry => entry && typeof entry.id === 'string' &&
+      /^[a-f0-9]{64}$/.test(entry.id) && Number.isInteger(entry.index) && entry.index >= 0 &&
+      Number.isInteger(entry.wordCount) && entry.wordCount > entry.index).slice(0, 100) : [];
+  }
+
+  function savePosition() {
+    clearTimeout(state.progressTimer); state.progressTimer = null;
+    if (!state.documentId || !usable() || state.pendingResume !== null) return;
+    const position = {id:state.documentId, index:state.index, wordCount:state.words.length, updatedAt:Date.now()};
+    writeStored(POSITIONS_KEY, [position, ...savedPositions().filter(entry => entry.id !== state.documentId)].slice(0, 100));
+  }
+
+  function queuePositionSave() {
+    if (state.progressTimer === null) state.progressTimer = setTimeout(savePosition, 800);
+  }
+
+  function dismissResume() {
+    state.pendingResume = null;
+    el.resumePrompt.hidden = true;
+  }
+
+  function closePageJump(restoreFocus = false) {
+    el.pageJumpPanel.hidden = true;
+    el.page.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) el.page.focus();
+  }
+
+  function openPageJump() {
+    if (!usable()) return;
+    stop(); closeSettings();
+    el.pageNumber.max = state.pageCount;
+    el.pageNumber.value = state.words[state.index].page;
+    el.pageNumber.removeAttribute('aria-invalid');
+    el.pageJumpHint.textContent = `1–${state.pageCount}`;
+    el.pageJumpPanel.hidden = false;
+    el.page.setAttribute('aria-expanded', 'true');
+    el.pageNumber.focus(); el.pageNumber.select();
+  }
+
+  function jumpToPage(event) {
+    event.preventDefault();
+    const page = Number(el.pageNumber.value);
+    if (!Number.isInteger(page) || page < 1 || page > state.pageCount) {
+      el.pageJumpHint.textContent = `Enter a whole ${state.unit} number from 1 to ${state.pageCount}.`;
+      el.pageNumber.setAttribute('aria-invalid', 'true');
+      return;
+    }
+    const index = state.words.findIndex(word => word.page === page);
+    if (index < 0) {
+      el.pageJumpHint.textContent = `${state.unit === 'chapter' ? 'Chapter' : 'Page'} ${page} has no readable text.`;
+      el.pageNumber.setAttribute('aria-invalid', 'true');
+      return;
+    }
+    seek(index); closePageJump(); el.focus.focus({preventScroll:true});
+  }
+
+  function wordsFromText(text, page) {
+    // Unicode-aware whitespace tokenization; leave apostrophes and punctuation attached to words.
+    return (text.match(/\S+/gu) || []).map(value => ({value, page}));
+  }
+
+  function indexReadingText() {
+    if (readingIndex) return readingIndex;
+    const offsets = [];
+    let offset = 0;
+    const text = state.words.map(word => {
+      offsets.push(offset);
+      offset += word.value.length + 1;
+      return word.value;
+    }).join(' ');
+    readingIndex = {text, offsets};
+    return readingIndex;
+  }
+
+  function lowerBound(values, target) {
+    let low = 0;
+    let high = values.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (values[middle] < target) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  function jumpSentence(direction) {
+    if (!usable()) return;
+    if (sentenceSegmenter) {
+      const index = indexReadingText();
+      const sentences = index.sentences ??= sentenceSegmenter.segment(index.text);
+      const current = sentences.containing(index.offsets[state.index]);
+      if (direction > 0) {
+        const next = lowerBound(index.offsets, current.index + current.segment.length);
+        if (next < state.words.length) seek(next);
+      } else {
+        const previous = current.index > 0 ? sentences.containing(current.index - 1).index : 0;
+        seek(lowerBound(index.offsets, previous + 1) - 1);
+      }
+      return;
+    }
+
+    const startsSentence = index => index === 0 || /[.!?。！？][”’"')\]]*$/u.test(state.words[index - 1].value);
+    let target = state.index;
+    if (direction < 0) while (target > 0 && !startsSentence(target)) target--;
+    do { target += direction; } while (target > 0 && target < state.words.length && !startsSentence(target));
+    if (target < state.words.length) seek(Math.max(0, target));
+  }
+
+  function renderFindMatch() {
+    const count = findResults.length;
+    el.findPrev.disabled = el.findNext.disabled = count < 2;
+    el.findGo.disabled = count === 0;
+    if (!count) {
+      el.findStatus.textContent = el.findInput.value.trim() ? 'No matches found.' : 'Enter a word or phrase.';
+      el.findPreview.textContent = '';
+      return;
+    }
+    const position = findResults[findSelection];
+    el.findStatus.textContent = `${fmt(findSelection + 1)} of ${fmt(count)} ${count === 1 ? 'match' : 'matches'} · ${state.unit} ${state.words[position].page}`;
+    el.findPreview.textContent = state.words.slice(Math.max(0, position - 4), position + 7).map(word => word.value).join(' ');
+  }
+
+  function updateFindMatches() {
+    const query = el.findInput.value.trim().replace(/\s+/gu, ' ');
+    findResults = [];
+    findSelection = 0;
+    if (query && usable()) {
+      const {text, offsets} = indexReadingText();
+      const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+      for (const match of text.matchAll(pattern)) {
+        const position = lowerBound(offsets, match.index + 1) - 1;
+        if (findResults.at(-1) !== position) findResults.push(position);
+      }
+      const next = lowerBound(findResults, state.index);
+      if (next < findResults.length) findSelection = next;
+    }
+    renderFindMatch();
+  }
+
+  function openFind() {
+    if (!usable() || el.findDialog.open) return;
+    stop();
+    closeSettings();
+    closePageJump();
+    updateFindMatches();
+    el.findDialog.showModal();
+    el.findInput.select();
+  }
+
+  function choosePivot(word) {
+    // A practical (not medically validated) optical focus point.
+    const chars = Array.from(word);
+    const len = chars.length;
+    if (len <= 1) return 0;
+    if (len <= 5) return Math.min(1, len - 1);
+    if (len <= 9) return 2;
+    return Math.min(3, len - 1);
+  }
+
+  function fillWord() {
+    const group = state.words.slice(state.index, state.index + number('chunk'));
+    el.word.replaceChildren();
+    el.word.className = 'word';
+    if (!group.length) {
+      el.word.classList.add('placeholder');
+      el.word.textContent = state.loading ? 'Extracting text…' : 'Choose a file to start reading.';
+      return;
+    }
+    const text = group.map(word => word.value).join(' ');
+    if (el.focusLetter.checked) {
+      el.word.append(renderFocalWord(text, group.length === 1));
+    } else {
+      const phrase = document.createElement('span');
+      phrase.className = 'phrase';
+      phrase.textContent = text;
+      el.word.append(phrase);
+    }
+  }
+
+  function fitReadingText() {
+    const available = el.focus.clientWidth;
+    if (!usable() || !wordMeasure || available < 2) {
+      el.word.style.fontSize = '';
+      return;
+    }
+    const size = number('fontSize');
+    wordMeasure.font = `${size}px ${readerFonts[el.fontFamily.value]}`;
+    wordMeasure.letterSpacing = `${-0.035 * size}px`;
+    const width = text => wordMeasure.measureText(text).width;
+    const current = el.word.firstElementChild;
+    let needed;
+    if (current?.classList.contains('orp')) {
+      // The focal letter stays centered, so each side gets half the remaining space.
+      const [left, pivot, right] = current.children;
+      needed = width(pivot.textContent) + 2 * Math.max(width(left.textContent), width(right.textContent));
+    } else {
+      const group = state.words.slice(state.index, state.index + number('chunk'));
+      needed = Math.max(...group.map(word => width(word.value)));
+    }
+    el.word.style.fontSize = needed > available ? `${size * (available - 1) / needed}px` : '';
+  }
+
+  function renderFocalWord(value, aligned = false) {
+    const chars = Array.from(value);
+    // A phrase gets one focal letter near its center, ignoring spaces and punctuation.
+    const letters = chars.flatMap((char, index) => /[\p{L}\p{N}]/u.test(char) ? [index] : []);
+    const pivot = aligned ? choosePivot(value) : (letters[Math.floor((letters.length - 1) / 2)] ?? choosePivot(value));
+    const wrapper = document.createElement('span');
+    wrapper.className = aligned ? 'orp' : 'phrase';
+    const lhs = document.createElement('span'); lhs.className = aligned ? 'orp-left' : ''; lhs.textContent = chars.slice(0,pivot).join('');
+    const center = document.createElement('span'); center.className = 'orp-pivot'; center.textContent = chars[pivot] || '';
+    const rhs = document.createElement('span'); rhs.className = aligned ? 'orp-right' : ''; rhs.textContent = chars.slice(pivot+1).join('');
+    wrapper.append(lhs,center,rhs);
+    return wrapper;
+  }
+
+  function renderPausedContext() {
+    if (!usable() || state.playing || !el.showContext.checked) {
+      el.contextBefore.hidden = true;
+      el.contextAfter.hidden = true;
+      return;
+    }
+
+    const start = Math.max(0, state.index - 16);
+    const groupEnd = Math.min(state.words.length, state.index + number('chunk'));
+    const end = Math.min(state.words.length, groupEnd + 16);
+    const words = state.words.slice(start, end).map(word => word.value);
+    const groupOffset = state.index - start;
+    const before = words.slice(0, groupOffset).join(' ');
+    const active = words.slice(groupOffset, groupEnd - start).join(' ');
+    const text = words.join(' ');
+    const activeStart = before ? before.length + 1 : 0;
+    const activeEnd = activeStart + active.length;
+    const sentences = sentenceSegmenter?.segment(text);
+    const sentenceStart = sentences?.containing(activeStart)?.index ?? 0;
+    const lastSentence = sentences?.containing(activeEnd - 1);
+    const sentenceEnd = lastSentence ? lastSentence.index + lastSentence.segment.trimEnd().length : text.length;
+    const limit = 6;
+    const earlier = text.slice(sentenceStart, activeStart).match(/\S+/gu) ?? [];
+    const later = text.slice(activeEnd, sentenceEnd).match(/\S+/gu) ?? [];
+    const moreBefore = earlier.length > limit || (start > 0 && sentenceStart === 0);
+    const moreAfter = later.length > limit || (end < state.words.length && sentenceEnd === text.length);
+    el.contextBefore.querySelector('bdi').textContent = earlier.length ? (moreBefore ? '… ' : '') + earlier.slice(-limit).join(' ') : '';
+    el.contextAfter.querySelector('bdi').textContent = later.length ? later.slice(0, limit).join(' ') + (moreAfter ? ' …' : '') : '';
+    el.contextBefore.hidden = earlier.length === 0;
+    el.contextAfter.hidden = later.length === 0;
+  }
+
+  function revealPlaybackControls() {
+    if (!state.playing || !el.quietPlayback.checked) return;
+    el.reader.classList.add('controls-visible');
+    clearTimeout(controlsTimer);
+    controlsTimer = setTimeout(() => el.reader.classList.remove('controls-visible'), 1600);
+  }
+
+  function syncPlayer() {
+    const loaded = usable();
+    for (const control of [el.play, el.prev, el.next, el.backTen, el.forwardTen, el.progress, el.page, el.openFind]) control.disabled = !loaded;
+    el.playIcon.textContent = state.playing ? 'Ⅱ' : '▶';
+    el.playLabel.textContent = state.playing ? 'Pause' : 'Play';
+    const quiet = state.playing && el.quietPlayback.checked;
+    el.reader.classList.toggle('quiet-playback', quiet);
+    if (!quiet) {
+      clearTimeout(controlsTimer);
+      el.reader.classList.remove('controls-visible');
+    }
+    renderPausedContext();
+  }
+
+  function paint() {
+    el.wpmValue.textContent = `${fmt(number('wpm'))} WPM`;
+    const chunk = number('chunk');
+    el.chunkValue.textContent = `${chunk} ${chunk === 1 ? 'word' : 'words'}`;
+    el.sizeValue.textContent = `${number('fontSize')} px`;
+    document.documentElement.style.setProperty('--reader-font', `${number('fontSize')}px`);
+    document.documentElement.style.setProperty('--reader-family', readerFonts[el.fontFamily.value]);
+    const highlightColour = document.querySelector('input[name="highlightColour"]:checked');
+    document.documentElement.style.setProperty('--accent', highlightColour.value);
+    el.highlightColourValue.textContent = highlightColour.getAttribute('aria-label');
+    el.mode.textContent = chunk === 1 ? 'RSVP · 1 word' : `Phrase mode · ${chunk} words`;
+    const n = state.words.length;
+    el.empty.hidden = state.loading || n > 0;
+    el.focus.hidden = !state.loading && n === 0;
+    el.documentRow.hidden = n === 0;
+    el.playbackRow.hidden = n === 0;
+    fillWord();
+    fitReadingText();
+    const consumed = n ? Math.min(state.index + chunk, n) : 0;
+    const percent = n ? Math.round(consumed * 100 / n) : 0;
+    el.progress.max = Math.max(0,n-1);
+    el.progress.value = Math.min(state.index, Math.max(0,n-1));
+    el.progressFill.style.setProperty('--progress', `${percent}%`);
+    el.progress.setAttribute('aria-valuetext', n ? `Word ${consumed} of ${n}` : 'No document loaded');
+    el.progressText.textContent = `${fmt(consumed)} / ${fmt(n)} words · ${percent}%`;
+    const page = state.words[state.index]?.page;
+    const locationLabel = state.unit === 'chapter' ? 'Chapter' : 'Page';
+    el.page.textContent = page ? `${locationLabel} ${page}${state.pageCount ? ` of ${state.pageCount}` : ''}` : `${locationLabel} –`;
+    const remaining = n ? Math.ceil((n - consumed) / number('wpm') * 60) : null;
+    el.remaining.textContent = remaining === null ? 'Time remaining –' : `~${Math.max(0,Math.ceil(remaining/60))} min remaining`;
+    syncPlayer();
+  }
+
+  function stop() {clearTimeout(state.timer);state.timer=null;state.playing=false;savePosition();syncPlayer();}
+  function delayForChunk() {
+    const group = state.words.slice(state.index, state.index+number('chunk'));
+    const base = (60000 / number('wpm')) * group.length;
+    if (!el.smartPause.checked) return base;
+    const last = group.at(-1)?.value || '';
+    if (/[.!?][”’"')\]]*$/.test(last)) return base*1.85;
+    if (/[,;:][”’"')\]]*$/.test(last)) return base*1.35;
+    return base;
+  }
+  function scheduleNext() {
+    if (!state.playing) return;
+    state.timer = setTimeout(() => {
+      const step = number('chunk');
+      if (state.index+step >= state.words.length) {
+        state.finished = true;
+        stop();
+        setMessage('You have reached the end.','success');
+        return;
+      }
+      state.index += step;
+      paint();
+      queuePositionSave();
+      scheduleNext();
+    },delayForChunk());
+  }
+  function play() {
+    if (!usable())return;
+    if (state.playing) {stop();return;}
+    dismissResume(); closePageJump();
+    if (state.finished) state.index = 0;
+    state.finished = false;
+    state.playing = true;
+    if (document.activeElement === el.play) el.focus.focus({preventScroll:true});
+    paint();
+    revealPlaybackControls();
+    queuePositionSave();
+    scheduleNext();
+  }
+  function seek(index) {
+    if (!usable())return;
+    stop();
+    dismissResume();
+    state.finished = false;
+    state.index = Math.max(0, Math.min(state.words.length-1, index));
+    paint();
+    savePosition();
+  }
+  function setWords(words, name, pages=0, documentId=null, unit='page') {
+    stop();
+    dismissResume();
+    closePageJump();
+    state.words = words;
+    readingIndex = undefined;
+    el.findInput.value = '';
+    findResults = [];
+    state.index = 0;
+    state.finished = false;
+    state.name = name;
+    state.pageCount = pages;
+    state.unit = unit;
+    state.loading = false;
+    state.documentId = documentId;
+    el.docName.textContent = name;
+    el.docMeta.textContent = `${fmt(words.length)} words${pages ? ` · ${fmt(pages)} ${unit}${pages === 1 ? '' : 's'}` : ''}`;
+    el.page.setAttribute('aria-label', `Jump to ${unit}`);
+    el.page.title = `Jump to a ${unit}`;
+    el.pageJumpPanel.setAttribute('aria-label', `Jump to a ${unit}`);
+    el.jumpLabel.textContent = `Go to ${unit}`;
+    const saved = documentId && savedPositions().find(entry => entry.id === documentId && entry.wordCount === words.length);
+    if (saved && saved.index > 0 && saved.index < words.length) {
+      state.index = saved.index;
+      state.pendingResume = saved.index;
+      el.resumeText.textContent = `Continue from ${unit} ${words[saved.index].page}?`;
+      el.resumePrompt.hidden = false;
+    }
+    paint();
+    setMessage(words.length ? `Ready: ${fmt(words.length)} words. Press Play or Space.` : 'No readable text was found in this document.', words.length ? 'success' : 'error');
+  }
+
+  // PDF.js runs entirely in the browser. If it cannot initialize or decode a
+  // document, the optional local Python server is a reliable offline fallback.
+  async function extractWithPDFJS(file, job) {
+    const lib = await pdfjs();
+    if (job !== state.importId) return null;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (job !== state.importId) return null;
+    const task = lib.getDocument({data: bytes, useSystemFonts: true});
+    try {
+      const doc = await task.promise;
+      if (job !== state.importId) return null;
+      const totalPages = doc.numPages;
+      const collected = [];
+      for (let i = 1; i <= totalPages; i++) {
+        if (job !== state.importId) return null;
+        setMessage(`Extracting page ${i} of ${totalPages}…`);
+        const page = await doc.getPage(i);
+        const content = await page.getTextContent();
+        let pageText = '';
+        for (const item of content.items) {
+          if (typeof item.str !== 'string') continue;
+          if (item.str) pageText += (pageText && !/\s$/.test(pageText) ? ' ' : '') + item.str;
+          if (item.hasEOL) pageText += '\n';
+        }
+        pageText = pageText.replace(/([^\s])-\s*\n\s*(?=\p{L})/gu, '$1');
+        collected.push(...wordsFromText(pageText, i));
+        page.cleanup();
+        if (i % 3 === 0) await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+      return {words:collected, pageCount:totalPages, source:'PDF.js (browser)'};
+    } finally {
+      await task.destroy().catch(error => console.warn('PDF.js cleanup failed:', error));
+    }
+  }
+
+  async function extractWithServer(file, job) {
+    setMessage('');
+    const response = await fetch('/api/extract', {
+      method:'POST',
+      headers:{'Content-Type':'application/pdf'},
+      body:file,
+    });
+    const result = await response.json().catch(() => null);
+    if (job !== state.importId) return null;
+    if (!response.ok || !result || !Array.isArray(result.pages)) {
+      throw new Error(result?.error || `Local extractor returned HTTP ${response.status}`);
+    }
+    const collected = [];
+    for (const page of result.pages) {
+      collected.push(...wordsFromText(page.text || '', page.page));
+    }
+    return {words:collected, pageCount:result.pageCount, source:result.engine + ' (local)'};
+  }
+
+  const shortError = error => (error?.message || String(error)).slice(0, 260);
+
+  function failImport(message) {
+    state.loading = false;
+    el.docMeta.textContent = 'Import failed';
+    paint();
+    setMessage(message, 'error');
+  }
+
+  async function importEPUB(file, job) {
+    try {
+      const {extractEPUB} = await import('./epub.js');
+      if (job !== state.importId) return;
+      const chapters = await extractEPUB(file, (chapter, total) => {
+        if (job !== state.importId) return false;
+        setMessage(`Extracting chapter ${chapter} of ${total}…`);
+      });
+      if (job !== state.importId || !chapters) return;
+      const documentId = await identifyDocument(file);
+      if (job !== state.importId) return;
+      const words = chapters.flatMap((text, index) => wordsFromText(text, index + 1));
+      setWords(words, file.name, chapters.length, documentId, 'chapter');
+      if (words.length) el.focus.focus({preventScroll:true});
+    } catch (error) {
+      if (job !== state.importId) return;
+      failImport(`EPUB import failed. ${shortError(error)}`);
+    }
+  }
+
+  async function importTextFile(file, job, isHTML) {
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error('Choose a TXT or HTML file up to 10 MB.');
+      const {decodeText, textFromHTML} = await import('./text.js');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (job !== state.importId) return;
+      const decoded = decodeText(bytes);
+      const text = isHTML ? textFromHTML(decoded, true) : decoded;
+      const documentId = await identifyDocument(file);
+      if (job !== state.importId) return;
+      const words = wordsFromText(text, 1);
+      setWords(words, file.name, 1, documentId);
+      if (words.length) el.focus.focus({preventScroll:true});
+    } catch (error) {
+      if (job !== state.importId) return;
+      failImport(`${isHTML ? 'HTML' : 'TXT'} import failed. ${shortError(error)}`);
+    }
+  }
+
+  async function importDocument(file) {
+    if (!file) return;
+    const maybeEPUB = file.type === 'application/epub+zip' || /\.epub$/i.test(file.name);
+    const maybePDF = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const maybeHTML = file.type === 'text/html' || /\.html?$/i.test(file.name);
+    const maybeTXT = file.type === 'text/plain' || /\.txt$/i.test(file.name);
+    if (!maybeEPUB && !maybePDF && !maybeHTML && !maybeTXT) {
+      setMessage('Please choose a PDF, EPUB, TXT or HTML file.', 'error');
+      return;
+    }
+    stop();dismissResume();closePageJump();el.findDialog.close();state.documentId=null;state.importId += 1;
+    const job = state.importId;
+    state.loading=true;state.words=[];state.index=0;state.pageCount=0;paint();
+    el.docName.textContent=file.name;
+    el.docMeta.textContent='Extracting text…';
+    setMessage('');
+    if (maybeEPUB) {
+      await importEPUB(file, job);
+      return;
+    }
+    if (!maybePDF) {
+      await importTextFile(file, job, maybeHTML);
+      return;
+    }
+    const documentId = await identifyDocument(file);
+    if (job !== state.importId) return;
+    let result;
+    let browserError;
+    let localError;
+    // Localhost uses the offline extractor first, avoiding fragile CDN requests.
+    // Publicly hosted static pages stay browser-only and never upload PDF bytes
+    // to an unknown remote server.
+    const isLocalhost = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+    if (isLocalhost) {
+      try { result = await extractWithServer(file, job); }
+      catch(err) { localError = err; console.warn('Local PDF extraction unavailable:', err); }
+    }
+    if (!result && job === state.importId) {
+      setMessage('Trying PDF.js in your browser…');
+      try { result = await extractWithPDFJS(file, job); }
+      catch(err) { browserError = err; console.warn('Browser PDF extraction failed:', err); }
+    }
+    if (job !== state.importId) return;
+    if (!result) {
+      console.error('PDF import failed:', {browserError, localError});
+      state.loading=false;
+      el.docMeta.textContent='Import failed';
+      paint();
+      if (browserError?.name === 'PasswordException' || /password/i.test(localError?.message || '')) {
+        setMessage('This PDF is password-protected. Please unlock it first.', 'error');
+      } else {
+        const details = `PDF.js: ${shortError(browserError || 'unavailable')}. ` +
+          (isLocalhost ? `Local extraction: ${shortError(localError || 'unavailable')}. ` : '');
+        setMessage(`PDF import failed. ${details}` +
+          (isLocalhost ? 'Start the included server with python3 server.py.' :
+            'Check whether your network permits loading PDF.js from jsDelivr.'), 'error');
+      }
+      return;
+    }
+    if (job !== state.importId || !result) return;
+    setWords(result.words, file.name, result.pageCount, documentId);
+    if (result.words.length) el.focus.focus({preventScroll:true});
+    if (result.words.length) setMessage(`Ready: ${fmt(result.words.length)} words via ${result.source}. Press Play or Space.`, 'success');
+    else setMessage('No selectable text found. This PDF may contain scanned pages and need OCR first.', 'error');
+  }
+
+  const sample = `Reading is often treated as a race across the page. But the real challenge is not moving your eyes quickly. It is finding a steady rhythm that gives the mind enough time to recognize each word and understand its meaning. In this reader, words appear in the same place instead of spreading across a printed line. You control the pace, the number of words that appear together, and the size of the text. Start slowly. Notice how commas create a short pause, and how full stops give a sentence room to settle. Some passages will feel effortless. Others, especially technical material, need more time and perhaps a return to the original page. Speed is useful, but comprehension is the real destination. Use the left and right arrow keys to move through the text, and the up and down arrow keys to change speed. Press the space bar whenever you want to pause or continue. Now, when you are ready, upload a PDF and make this little experiment your own.`;
+
+  el.input.addEventListener('change',e => {importDocument(e.target.files?.[0]);e.target.value='';});
+  const closeSettings = () => { el.settings.open = false; };
+  const pickFile = () => { closeSettings(); el.input.click(); };
+  const resetReading = () => {
+    if (!usable()) return;
+    seek(0);
+    el.focus.focus({preventScroll:true});
+  };
+  el.page.addEventListener('click', () => el.pageJumpPanel.hidden ? openPageJump() : closePageJump());
+  el.pageJumpPanel.addEventListener('submit', jumpToPage);
+  el.pageJump.addEventListener('focusout', () => requestAnimationFrame(() => {
+    if (!el.pageJump.contains(document.activeElement)) closePageJump();
+  }));
+  el.resume.addEventListener('click', () => {
+    if (state.pendingResume !== null) seek(state.pendingResume);
+    el.focus.focus({preventScroll:true});
+  });
+  el.startOver.addEventListener('click', resetReading);
+  for (const control of preferenceControls) {
+    control.addEventListener('input', savePreferences);
+    control.addEventListener('change', savePreferences);
+  }
+  window.addEventListener('pagehide', savePosition);
+  document.addEventListener('visibilitychange', () => {if (document.hidden) savePosition();});
+  el.reader.addEventListener('pointermove', revealPlaybackControls, {passive:true});
+  el.reader.addEventListener('pointerdown', revealPlaybackControls, {passive:true});
+  el.reader.addEventListener('focusin', revealPlaybackControls);
+  el.showContext.addEventListener('change', renderPausedContext);
+  el.quietPlayback.addEventListener('change', syncPlayer);
+  el.drop.addEventListener('click', pickFile);
+  $('openFile').addEventListener('click', pickFile);
+  $('replaceFile').addEventListener('click', pickFile);
+  el.openFind.addEventListener('click', openFind);
+  el.closeFind.addEventListener('click', () => el.findDialog.close());
+  el.findInput.addEventListener('input', updateFindMatches);
+  for (const [button, direction] of [[el.findPrev, -1], [el.findNext, 1]]) {
+    button.addEventListener('click', () => {
+      findSelection = (findSelection + direction + findResults.length) % findResults.length;
+      renderFindMatch();
+    });
+  }
+  el.findForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const position = findResults[findSelection];
+    if (position === undefined) return;
+    el.findDialog.close();
+    seek(position);
+    el.focus.focus({preventScroll:true});
+  });
+  // The whole page remains a drop target after the upload placeholder disappears.
+  let dragDepth = 0;
+  document.addEventListener('dragenter', e => {
+    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+    e.preventDefault(); dragDepth++; el.drop.classList.add('over');
+  });
+  document.addEventListener('dragover', e => {
+    if (Array.from(e.dataTransfer?.types || []).includes('Files')) e.preventDefault();
+  });
+  document.addEventListener('dragleave', () => {
+    if (--dragDepth <= 0) { dragDepth = 0; el.drop.classList.remove('over'); }
+  });
+  document.addEventListener('drop', e => {
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault(); dragDepth = 0; el.drop.classList.remove('over');
+    closeSettings(); importDocument(e.dataTransfer.files[0]);
+  });
+  el.settings.addEventListener('pointerenter', e => {
+    if (e.pointerType === 'mouse') el.settings.open = true;
+  });
+  el.settings.querySelector('summary').addEventListener('click', e => {
+    // A mouse click following hover should keep the newly opened panel open.
+    if (e.pointerType === 'mouse') { e.preventDefault(); el.settings.open = true; }
+  });
+  el.settings.addEventListener('pointerleave', e => {
+    if (e.pointerType === 'mouse' && !el.settings.querySelector('.settings-panel').contains(document.activeElement)) closeSettings();
+  });
+  el.settings.addEventListener('focusout', () => {
+    requestAnimationFrame(() => {
+      if (!el.settings.contains(document.activeElement) && !el.settings.matches(':hover')) closeSettings();
+    });
+  });
+  document.addEventListener('click', e => {
+    if (!el.settings.contains(e.target)) closeSettings();
+    if (!el.pageJump.contains(e.target)) closePageJump();
+  });
+  el.sample.addEventListener('click',()=>{
+    closeSettings(); state.importId++;
+    setWords(wordsFromText(sample,1),'Sample passage',1);
+    el.focus.focus({preventScroll:true});
+  });
+  el.play.addEventListener('click',play);
+  el.prev.addEventListener('click',()=>seek(state.index-number('chunk')));
+  el.next.addEventListener('click',()=>seek(state.index+number('chunk')));
+  el.backTen.addEventListener('click',()=>seek(state.index-10));
+  el.forwardTen.addEventListener('click',()=>seek(state.index+10));
+  el.progress.addEventListener('input',()=>seek(Number(el.progress.value)));
+  el.wpm.addEventListener('input',()=>{const wasPlaying=state.playing;stop();paint();if(wasPlaying){state.playing=true;syncPlayer();scheduleNext();}});
+  el.chunk.addEventListener('input',()=>{const wasPlaying=state.playing;stop();paint();if(wasPlaying){state.playing=true;syncPlayer();scheduleNext();}});
+  for (const control of [el.fontFamily,el.fontSize,el.focusLetter])control.addEventListener('input',paint);
+  for (const colour of document.querySelectorAll('input[name="highlightColour"]')) colour.addEventListener('change',paint);
+  el.full.addEventListener('click',async()=>{try{if(document.fullscreenElement) await document.exitFullscreen();else await el.reader.requestFullscreen();}catch(err){setMessage('Full-screen mode is unavailable in this browser.','error');}});
+  const openModal=()=>{closeSettings();closePageJump();stop();el.modal.classList.add('show');el.pasteText.focus();};
+  const closeModal=()=>{el.modal.classList.remove('show');el.settings.querySelector('summary').focus();};
+  el.paste.addEventListener('click',openModal);
+  el.closeModal.addEventListener('click',closeModal);
+  el.cancelPaste.addEventListener('click',closeModal);
+  el.importPaste.addEventListener('click',()=>{const t=el.pasteText.value.trim();if(!t){el.pasteText.focus();return;}state.importId++;setWords(wordsFromText(t,1),'Pasted text',1);closeModal();el.focus.focus({preventScroll:true});});
+  el.modal.addEventListener('click',e=>{if(e.target===el.modal)closeModal();});
+  document.addEventListener('keydown',e=>{
+    if (el.findDialog.open) return;
+    if (e.key==='Escape' && el.modal.classList.contains('show')){closeModal();return;}
+    if (e.key==='Escape' && !el.pageJumpPanel.hidden){closePageJump(true);return;}
+    if (el.modal.classList.contains('show')) {
+      if (e.key === 'Tab') {
+        const controls = [el.closeModal, el.pasteText, el.cancelPaste, el.importPaste];
+        if (e.shiftKey && document.activeElement === controls[0]) {
+          e.preventDefault(); controls.at(-1).focus();
+        } else if (!e.shiftKey && document.activeElement === controls.at(-1)) {
+          e.preventDefault(); controls[0].focus();
+        }
+      }
+      return;
+    }
+    if (e.key === 'Escape' && el.settings.open) {
+      closeSettings(); el.settings.querySelector('summary').focus(); return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const active=document.activeElement;
+    if (active && (['INPUT','TEXTAREA','SELECT'].includes(active.tagName) || active.isContentEditable))return;
+    if (e.code==='Space' && ['BUTTON','SUMMARY'].includes(active?.tagName)) return;
+    const key = e.key.toLowerCase();
+    if (e.code==='Space'){e.preventDefault();play();}
+    else if(e.key==='ArrowRight' || e.key==='ArrowLeft') {
+      e.preventDefault();
+      const direction = e.key === 'ArrowRight' ? 1 : -1;
+      if (e.shiftKey) jumpSentence(direction);
+      else seek(state.index + direction * number('chunk'));
+    }
+    else if(e.key==='ArrowUp'){e.preventDefault();el.wpm.value=Math.min(1000,number('wpm')+20);el.wpm.dispatchEvent(new Event('input'));}
+    else if(e.key==='ArrowDown'){e.preventDefault();el.wpm.value=Math.max(80,number('wpm')-20);el.wpm.dispatchEvent(new Event('input'));}
+    else if(key==='f'){e.preventDefault();el.full.click();}
+    else if (key === 'r' && !e.repeat) {
+      e.preventDefault();
+      resetReading();
+    } else if (key === 'n' && !e.repeat) {
+      e.preventDefault();
+      pickFile();
+    } else if (key === 's' && !e.repeat) {
+      e.preventDefault();
+      openFind();
+    }
+  });
+  restorePreferences();
+  paint();
+  let observedWidth;
+  new ResizeObserver(([entry]) => {
+    if (entry.contentRect.width === observedWidth) return;
+    observedWidth = entry.contentRect.width;
+    fitReadingText();
+  }).observe(el.focus);
+</script>
+</body>
+</html>
